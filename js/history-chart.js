@@ -155,8 +155,15 @@ export function buildHistoryChartConfig(activities, { rangeKey, axis, people }) 
 
 export function mountHistoryChart(canvas, activities, options, existingChart) {
   if (!canvas || typeof globalThis.Chart === 'undefined') return existingChart;
-  if (existingChart) existingChart.destroy();
   const config = buildHistoryChartConfig(activities, options);
+  if (existingChart) {
+    existingChart.data.labels = config.data.labels;
+    existingChart.data.datasets = config.data.datasets;
+    existingChart.options.scales.x.ticks.maxTicksLimit =
+      config.options.scales.x.ticks.maxTicksLimit;
+    existingChart.update();
+    return existingChart;
+  }
   return new globalThis.Chart(canvas.getContext('2d'), config);
 }
 

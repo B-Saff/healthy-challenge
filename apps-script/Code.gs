@@ -90,13 +90,16 @@ function readActivitiesFromSheet() {
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     if (!row[0]) continue; // skip blank rows
+    // Soft-deleted rows stay in the Sheet as an audit log. The app only
+    // needs live events, so they are left out of the payload.
+    if (isDeletedCell(row[5])) continue;
     activities.push({
       id: String(row[0]),
       person: row[1],
       activity: row[2],
       timestamp: asTimestampString(row[3], tz),
       date: asDateString(row[4], tz),
-      deleted: isDeletedCell(row[5]),
+      deleted: false,
     });
   }
   return activities;

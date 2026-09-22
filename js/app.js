@@ -227,14 +227,91 @@ function fmtPoints(n) {
 
 let lifetimeSummaryCache = null;
 
+function personCardEl(person) {
+  const id = person === 'Ben' ? 'today-ben' : 'today-chelsea';
+  return document.getElementById(id);
+}
+
 function render() {
   lifetimeSummaryCache = computeLifetimeSummary(state.activities);
   renderTabVisibility();
   renderWeek();
-  renderPersonCard('Ben', document.getElementById('today-ben'));
-  renderPersonCard('Chelsea', document.getElementById('today-chelsea'));
+  renderPersonCard('Ben', personCardEl('Ben'));
+  renderPersonCard('Chelsea', personCardEl('Chelsea'));
   orderLogPanels();
   renderLifetime();
+}
+
+// +/- and reading toggles only change numbers. Keep the card DOM so
+// steppers and the radio do not flicker or lose focus.
+function refreshScores() {
+  lifetimeSummaryCache = computeLifetimeSummary(state.activities);
+  renderWeek();
+  for (const person of PEOPLE) patchPersonCard(person);
+  renderLifetime();
+}
+
+function patchStepper(card, activity, { count, minusDisabled, plusDisabled, countClass = '' }) {
+  const row = card.querySelector(`[data-activity="${activity}"]`);
+  if (!row) return;
+  const countEl = row.querySelector('.count');
+  if (countEl) {
+    countEl.textContent = count;
+    countEl.className = countClass ? `count ${countClass}` : 'count';
+  }
+  const minus = row.querySelector('[data-action="minus"]');
+  const plus = row.querySelector('[data-action="plus"]');
+  if (minus) minus.disabled = minusDisabled;
+  if (plus) plus.disabled = plusDisabled;
+}
+
+function patchPersonCard(person) {
+  const container = personCardEl(person);
+  const card = container?.querySelector('.person-card');
+  if (!card) return;
+
+  const date = state.personDates[person];
+  const breakdown = computeDailyBreakdown(state.activities, person, date);
+  const scoreClass = dailyPointsColorClass(breakdown.points);
+  const pointsText = fmtPoints(breakdown.points);
+
+  if (card.classList.contains('is-collapsed')) {
+    const pointsEl = card.querySelector('.collapsed-points');
+    if (pointsEl) {
+      pointsEl.textContent = pointsText;
+      pointsEl.className = `collapsed-points ${scoreClass}`;
+    }
+    return;
+  }
+
+  const scoreEl = card.querySelector('.day-score');
+  if (scoreEl) {
+    scoreEl.textContent = pointsText;
+    scoreEl.className = `day-score ${scoreClass}`;
+  }
+
+  patchStepper(card, 'gym', {
+    count: breakdown.gymCount,
+    minusDisabled: breakdown.gymCount === 0,
+    plusDisabled: !canAddDailyActivity(breakdown, 'gym'),
+  });
+  patchStepper(card, 'dog_walk', {
+    count: breakdown.dogWalkCount,
+    minusDisabled: breakdown.dogWalkCount === 0,
+    plusDisabled: !canAddDailyActivity(breakdown, 'dog_walk'),
+  });
+  patchStepper(card, 'unhealthy_choice', {
+    count: breakdown.unhealthyCount,
+    minusDisabled: breakdown.unhealthyCount === 0,
+    plusDisabled: false,
+    countClass: breakdown.unhealthyCount > 0 ? 'negative' : '',
+  });
+
+  const radio = card.querySelector('.reading-radio');
+  if (radio) radio.checked = breakdown.readingDone;
+
+  const existingSummary = card.querySelector('.person-milestone-summary');
+  if (existingSummary) existingSummary.outerHTML = personMilestoneSummary(person);
 }
 
 function orderLogPanels() {
@@ -249,12 +326,29 @@ function orderLogPanels() {
   else panel.append(first, second);
 }
 
+function weekStatusText(tie, leader, diff) {
+  if (tie) return `🤝 Tie — massage for both`;
+  return `🏆 ${leader} ahead by ${fmtPoints(diff).replace('+', '')}`;
+}
+
 function renderWeek() {
   const { scores, leader, tie, diff } = computeWeeklyStandings(
     state.activities,
     today()
   );
   const container = document.getElementById('week-content');
+  if (container.querySelector('.week-strip-scores')) {
+    for (const person of PEOPLE) {
+      const scoreEl = container.querySelector(`.week-chip.person-${person} .score`);
+      if (!scoreEl) continue;
+      scoreEl.textContent = fmtPoints(scores[person]);
+      scoreEl.className = `score ${weekStandingScoreClass(person, tie, leader)}`;
+    }
+    const statusEl = container.querySelector('.week-strip-status');
+    if (statusEl) statusEl.textContent = weekStatusText(tie, leader, diff);
+    return;
+  }
+
   const chips = PEOPLE.map(
     (person) => `
       <div class="week-chip person-${person}">
@@ -263,17 +357,10 @@ function renderWeek() {
       </div>`
   ).join('');
 
-  let status;
-  if (tie) {
-    status = `🤝 Tie — massage for both`;
-  } else {
-    status = `🏆 ${leader} ahead by ${fmtPoints(diff).replace('+', '')}`;
-  }
-
   container.innerHTML = `
     <div class="week-strip-head">This week</div>
     <div class="week-strip-scores">${chips}</div>
-    <div class="week-strip-status">${status}</div>`;
+    <div class="week-strip-status">${weekStatusText(tie, leader, diff)}</div>`;
 }
 
 function compactMilestoneRow({ icon, progress, threshold, earned, done }) {
@@ -355,9 +442,11 @@ function renderPersonCard(person, container) {
   const breakdown = computeDailyBreakdown(state.activities, person, date);
   const expanded = person === state.focusPerson;
 
+  const dayViewClass = isToday ? 'is-viewing-today' : 'is-viewing-past';
+
   if (!expanded) {
     container.innerHTML = `
-      <div class="card person-card person-${person} is-collapsed">
+      <div class="card person-card person-${person} is-collapsed ${dayViewClass}">
         <button type="button" class="person-expand-btn" aria-expanded="false" aria-label="Open ${person}'s log">
           <span class="person-name">${person}</span>
           <span class="collapsed-summary">
@@ -377,7 +466,7 @@ function renderPersonCard(person, container) {
   const nextOk = canNudgePersonDate(person, 1);
 
   container.innerHTML = `
-    <div class="card person-card person-${person} is-expanded">
+    <div class="card person-card person-${person} is-expanded ${dayViewClass}">
       <div class="person-card-head">
         <div class="person-head-top">
           <span class="person-name">${person}</span>
@@ -386,8 +475,9 @@ function renderPersonCard(person, container) {
         <nav class="date-nav" aria-label="${person} day">
           <button type="button" class="date-nav-btn" data-date-action="prev" ${prevOk ? '' : 'disabled'} aria-label="Previous day">‹</button>
           <div class="date-nav-center">
+            ${isToday ? '' : '<span class="date-nav-badge">Past day</span>'}
             <span class="date-nav-label">${formatDayHeading(date)}</span>
-            ${isToday ? '' : '<button type="button" class="date-jump-today" data-date-action="today">Today</button>'}
+            ${isToday ? '' : '<button type="button" class="date-jump-today" data-date-action="today">Jump to today</button>'}
           </div>
           <button type="button" class="date-nav-btn" data-date-action="next" ${nextOk ? '' : 'disabled'} aria-label="Next day">›</button>
         </nav>
@@ -639,14 +729,14 @@ function addActivity(person, activity) {
     pending: true,
   };
   state.activities.push(entry);
-  render();
+  refreshScores();
   showSaving();
   saveNew(entry);
 }
 
 function removeActivity(entry) {
   entry.deleted = true;
-  render();
+  refreshScores();
   if (entry.pending) return;
   showSaving();
   saveDelete(entry);
@@ -660,7 +750,7 @@ async function saveNew(entry) {
     const current = state.activities.find((a) => a.id === entry.id);
     if (current && !current.deleted) {
       current.deleted = true;
-      render();
+      refreshScores();
       showError(err.message);
       settleSave(false);
       return;
@@ -682,7 +772,7 @@ async function saveNew(entry) {
       Object.assign(current, created, { pending: false, deleted: false });
       sessionIds.add(created.id);
       api.rememberActivities(state.activities);
-      render();
+      refreshScores();
       showError(err.message);
       settleSave(false);
       return;
@@ -703,7 +793,7 @@ async function saveDelete(entry) {
     settleSave(true);
   } catch (err) {
     entry.deleted = false;
-    render();
+    refreshScores();
     showError(err.message);
     settleSave(false);
   }

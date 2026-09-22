@@ -38,7 +38,9 @@ export function loadCachedActivities() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
-    return parsed.map(normalizeActivity);
+    return parsed
+      .filter((a) => a && a.deleted !== true && String(a.deleted).toUpperCase() !== 'TRUE')
+      .map(normalizeActivity);
   } catch {
     return null;
   }
@@ -47,14 +49,14 @@ export function loadCachedActivities() {
 export function rememberActivities(activities) {
   try {
     const confirmed = activities
-      .filter((a) => a && !a.pending)
+      .filter((a) => a && !a.pending && !a.deleted)
       .map((a) => ({
         id: a.id,
         person: a.person,
         activity: a.activity,
         timestamp: a.timestamp,
         date: a.date,
-        deleted: a.deleted === true,
+        deleted: false,
       }));
     localStorage.setItem(CACHE_KEY, JSON.stringify(confirmed));
   } catch {
@@ -63,15 +65,19 @@ export function rememberActivities(activities) {
 }
 
 // Keep taps made while a refresh is in flight. The server snapshot can be
-// a few seconds older than what is already on screen.
+// a few seconds older than what is already on screen, and it never includes
+// rows already soft-deleted in the Sheet.
 export function mergeActivities(local, fresh, sessionIds) {
   const pending = local.filter((a) => a.pending);
   const deletedIds = new Set(
     local.filter((a) => a.deleted && !a.pending).map((a) => a.id)
   );
   const freshIds = new Set(fresh.map((a) => a.id));
+  // A save from this session may not be in a stale snapshot yet. Confirmed
+  // deletes are omitted on purpose: once the server drops the row, the
+  // tombstone is no longer needed.
   const extras = local.filter(
-    (a) => sessionIds.has(a.id) && !a.pending && !freshIds.has(a.id)
+    (a) => sessionIds.has(a.id) && !a.pending && !a.deleted && !freshIds.has(a.id)
   );
   return fresh
     .map((a) => (deletedIds.has(a.id) ? { ...a, deleted: true } : a))
