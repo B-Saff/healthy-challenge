@@ -4,41 +4,48 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
 <title>Healthy Challenge</title>
+<link rel="preconnect" href="https://script.google.com" />
+<link rel="preconnect" href="https://script.googleusercontent.com" />
 <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
 <div class="page">
   <header class="top">
     <h1>🏆 Healthy Challenge</h1>
-    <span class="today-date" id="today-date"></span>
   </header>
 
-  <nav class="links">
-    <a href="history.html">📜 View History</a>
-  </nav>
-
   <div id="error-banner" class="error-banner" style="display:none;"></div>
+  <div id="sync-status" class="sync-status" hidden>Saving…</div>
   <div id="loading" class="loading">Loading…</div>
 
-  <main id="app" style="display:none;">
-    <section class="card" id="week-card">
-      <h2>This Week</h2>
-      <div id="week-content"></div>
-    </section>
-
-    <section class="card">
-      <h2>Today</h2>
+  <main id="app" class="has-bottom-tabs" style="display:none;">
+    <section class="tab-panel active" data-tab-panel="log">
+      <div id="week-strip" class="week-strip card">
+        <div id="week-content"></div>
+      </div>
       <div id="today-ben"></div>
-    </section>
-    <section class="card">
       <div id="today-chelsea"></div>
     </section>
 
-    <section class="card">
-      <h2>Lifetime Progress</h2>
-      <div id="lifetime-content"></div>
+    <section class="tab-panel" data-tab-panel="milestones" hidden>
+      <div id="lifetime-content" class="milestones-layout"></div>
     </section>
   </main>
+
+  <nav class="bottom-tabs" id="bottom-tabs" aria-label="Main" hidden>
+    <button type="button" class="bottom-tab active" data-tab="log" aria-current="page">
+      <span class="tab-icon" aria-hidden="true">🏠</span>
+      <span class="tab-label">Home</span>
+    </button>
+    <button type="button" class="bottom-tab" data-tab="milestones">
+      <span class="tab-icon" aria-hidden="true">🎯</span>
+      <span class="tab-label">Milestones</span>
+    </button>
+    <a class="bottom-tab" href="history.html">
+      <span class="tab-icon" aria-hidden="true">📜</span>
+      <span class="tab-label">History</span>
+    </a>
+  </nav>
 </div>
 
 <script type="module" src="js/app.js"></script>

@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
 <title>History — Healthy Challenge</title>
+<link rel="preconnect" href="https://script.google.com" />
+<link rel="preconnect" href="https://script.googleusercontent.com" />
 <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -12,32 +14,59 @@
     <h1>📜 History</h1>
   </header>
 
-  <nav class="links">
-    <a href="index.html">← Back to Dashboard</a>
-  </nav>
-
   <div id="error-banner" class="error-banner" style="display:none;"></div>
+  <div id="sync-status" class="sync-status" hidden>Updating…</div>
   <div id="loading" class="loading">Loading…</div>
 
-  <main id="app" style="display:none;">
-    <div class="filters">
-      <select id="person-filter">
+  <main id="app" class="has-bottom-tabs" style="display:none;">
+    <div class="history-person-bar">
+      <select id="person-filter" aria-label="Person">
         <option value="Both">Both</option>
         <option value="Ben">Ben</option>
         <option value="Chelsea">Chelsea</option>
       </select>
-      <div class="toggle-group">
-        <button type="button" id="view-daily" class="active">Daily</button>
-        <button type="button" id="view-weekly">Weekly</button>
-      </div>
     </div>
 
-    <section class="card">
+    <section class="card history-chart-card flush">
+      <div class="chart-toolbar" id="chart-toolbar">
+        <div class="chart-segments" role="group" aria-label="Time range" data-chart-control="range">
+          <button type="button" data-value="1week">1w</button>
+          <button type="button" data-value="1month" class="active">1m</button>
+          <button type="button" data-value="3months">3m</button>
+          <button type="button" data-value="6months">6m</button>
+        </div>
+        <div class="chart-segments" role="group" aria-label="Axis" data-chart-control="axis">
+          <button type="button" data-value="days" class="active">Days</button>
+          <button type="button" data-value="weeks">Weeks</button>
+        </div>
+      </div>
+      <div class="history-chart-wrap">
+        <canvas id="history-chart" aria-label="Points history chart"></canvas>
+      </div>
+    </section>
+
+    <section class="card flush history-detail-card">
       <div id="history-content"></div>
     </section>
   </main>
+
+  <nav class="bottom-tabs" aria-label="Main">
+    <a class="bottom-tab" href="index.html">
+      <span class="tab-icon" aria-hidden="true">🏠</span>
+      <span class="tab-label">Home</span>
+    </a>
+    <a class="bottom-tab" href="index.html#milestones">
+      <span class="tab-icon" aria-hidden="true">🎯</span>
+      <span class="tab-label">Milestones</span>
+    </a>
+    <a class="bottom-tab active" href="history.html" aria-current="page">
+      <span class="tab-icon" aria-hidden="true">📜</span>
+      <span class="tab-label">History</span>
+    </a>
+  </nav>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script type="module" src="js/history.js"></script>
 </body>
 </html>

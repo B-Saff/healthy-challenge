@@ -6,6 +6,8 @@ var SHEET_NAME = 'Activities';
 var PEOPLE = ['Ben', 'Chelsea'];
 var ACTIVITY_TYPES = ['gym', 'dog_walk', 'reading', 'unhealthy_choice'];
 var HEADERS = ['ID', 'Person', 'Activity', 'Timestamp', 'Date', 'Deleted'];
+var ACTIVITIES_CACHE_TTL = 600;
+var VERSION_CACHE_TTL = 21600;
 
 function doGet(e) {
   var action = (e.parameter.action || '').trim();
@@ -39,8 +41,43 @@ function getSheet() {
   return sheet;
 }
 
-function getActivities() {
+function spreadsheetTimeZone() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+}
+
+// Date cells come back as Date objects and JSON turns them into UTC
+// instants. Always send calendar strings the page can match.
+function asDateString(value, tz) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, tz, 'yyyy-MM-dd');
+  }
+  var text = String(value);
+  var t = text.indexOf('T');
+  return t === -1 ? text : text.substring(0, t);
+}
+
+function asTimestampString(value, tz) {
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, tz, "yyyy-MM-dd'T'HH:mm:ss");
+  }
+  return String(value).replace(' ', 'T');
+}
+
+function activitiesCache() {
+  return CacheService.getScriptCache();
+}
+
+function activitiesVersion(cache) {
+  return cache.get('activities-version') || '0';
+}
+
+function invalidateActivitiesCache() {
+  activitiesCache().put('activities-version', String(new Date().getTime()), VERSION_CACHE_TTL);
+}
+
+function readActivitiesFromSheet() {
   var sheet = getSheet();
+  var tz = spreadsheetTimeZone();
   var values = sheet.getDataRange().getValues();
   var rows = values.slice(1); // drop header row
   var activities = [];
@@ -51,10 +88,27 @@ function getActivities() {
       id: String(row[0]),
       person: row[1],
       activity: row[2],
-      timestamp: row[3],
-      date: row[4],
+      timestamp: asTimestampString(row[3], tz),
+      date: asDateString(row[4], tz),
       deleted: row[5] === true || row[5] === 'TRUE',
     });
+  }
+  return activities;
+}
+
+function getActivities() {
+  var cache = activitiesCache();
+  var version = activitiesVersion(cache);
+  var hit = cache.get('activities-' + version);
+  if (hit) return JSON.parse(hit);
+
+  var activities = readActivitiesFromSheet();
+  // Skip the write if a save landed while this read was in progress.
+  if (activitiesVersion(cache) === version) {
+    var payload = JSON.stringify(activities);
+    if (payload.length < 90000) {
+      cache.put('activities-' + version, payload, ACTIVITIES_CACHE_TTL);
+    }
   }
   return activities;
 }
@@ -74,6 +128,7 @@ function addActivity(person, activity, timestamp) {
   var id = Utilities.getUuid();
   var sheet = getSheet();
   sheet.appendRow([id, person, activity, timestamp, date, false]);
+  invalidateActivitiesCache();
 
   return { id: id, person: person, activity: activity, timestamp: timestamp, date: date, deleted: false };
 }
@@ -87,6 +142,7 @@ function deleteActivity(id) {
   for (var i = 1; i < values.length; i++) {
     if (String(values[i][0]) === String(id)) {
       sheet.getRange(i + 1, 6).setValue(true); // Deleted column
+      invalidateActivitiesCache();
       return;
     }
   }

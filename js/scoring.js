@@ -6,12 +6,26 @@ export const PEOPLE = ['Ben', 'Chelsea'];
 export const ACTIVITY_TYPES = {
   gym: { label: 'Gym', icon: '🏋️' },
   dog_walk: { label: 'Dog Walk', icon: '🐕' },
-  reading: { label: 'Reading', icon: '📖' },
+  reading: { label: 'Nightly Reading', icon: '📖' },
   unhealthy_choice: { label: 'Unhealthy Choice', icon: '🍔' },
 };
 
+export const DAILY_ACTIVITY_LIMITS = {
+  gym: 1,
+  dog_walk: 4,
+};
+
+export function canAddDailyActivity(breakdown, activity) {
+  const limit = DAILY_ACTIVITY_LIMITS[activity];
+  if (limit == null) return true;
+  if (activity === 'gym') return breakdown.gymCount < limit;
+  if (activity === 'dog_walk') return breakdown.dogWalkCount < limit;
+  return true;
+}
+
 const DINNER_THRESHOLD = 35;
 const MASSAGE_THRESHOLD = 100;
+const WINKY_THRESHOLD = 20;
 const WEEKEND_TRIP_THRESHOLD = 250;
 
 export function localDateString(date = new Date()) {
@@ -26,6 +40,31 @@ export function localTimestamp(date = new Date()) {
     .map((n) => String(n).padStart(2, '0'))
     .join(':');
   return `${localDateString(date)}T${time}`;
+}
+
+// Google Sheets returns date cells as UTC instants. For this spreadsheet
+// those instants are midnight in a US timezone, so the calendar date is
+// the YYYY-MM-DD prefix. Values that are already YYYY-MM-DD stay as-is.
+export function sheetDateString(value) {
+  const match = String(value ?? '').match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : String(value ?? '');
+}
+
+export function sheetTimestampString(value) {
+  const s = String(value ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return localTimestamp(d);
+}
+
+export function normalizeActivity(activity) {
+  return {
+    ...activity,
+    date: sheetDateString(activity.date),
+    timestamp: sheetTimestampString(activity.timestamp),
+    deleted: activity.deleted === true || String(activity.deleted).toUpperCase() === 'TRUE',
+  };
 }
 
 // Monday-Sunday range containing `date`, as local YYYY-MM-DD strings.
@@ -47,6 +86,18 @@ function activeEvents(activities) {
 // walks that person had already logged that day, in chronological order.
 function dogWalkValue(indexInDay) {
   return indexInDay < 2 ? 0.5 : 0.25;
+}
+
+// Gym + 3 dog walks + reading, no unhealthy choices.
+export function perfectDayNetPoints() {
+  let walkPts = 0;
+  for (let i = 0; i < 3; i += 1) walkPts += dogWalkValue(i);
+  return 2 + walkPts + 0.5;
+}
+
+export function perfectDaysNeeded(pointsRemaining) {
+  if (pointsRemaining <= 0) return 0;
+  return Math.ceil(pointsRemaining / perfectDayNetPoints());
 }
 
 // Breakdown + net points for one person on one local calendar date.
@@ -83,6 +134,16 @@ export function computeDailyBreakdown(activities, person, date) {
     readingDone,
     unhealthyCount,
     points,
+  };
+}
+
+export function dailyPointsByActivity(activities, person, date) {
+  const b = computeDailyBreakdown(activities, person, date);
+  return {
+    gym: b.gymCount * 2,
+    dog_walk: b.dogWalkPoints,
+    reading: b.readingDone ? 0.5 : 0,
+    unhealthy_choice: b.unhealthyCount * -3,
   };
 }
 
@@ -123,6 +184,7 @@ export function computeWeeklyStandings(activities, date = new Date()) {
 export function computeRewards(lifetimePoints) {
   const dinners = Math.floor(lifetimePoints / DINNER_THRESHOLD);
   const massages = Math.floor(lifetimePoints / MASSAGE_THRESHOLD);
+  const winks = Math.floor(lifetimePoints / WINKY_THRESHOLD);
   return {
     dinners,
     dinnerProgress: lifetimePoints - dinners * DINNER_THRESHOLD,
@@ -130,6 +192,9 @@ export function computeRewards(lifetimePoints) {
     massages,
     massageProgress: lifetimePoints - massages * MASSAGE_THRESHOLD,
     massageRemaining: MASSAGE_THRESHOLD - (lifetimePoints - massages * MASSAGE_THRESHOLD),
+    winks,
+    winkyProgress: lifetimePoints - winks * WINKY_THRESHOLD,
+    winkyThreshold: WINKY_THRESHOLD,
   };
 }
 

@@ -2,21 +2,30 @@ import * as api from './api.js';
 import {
   PEOPLE,
   ACTIVITY_TYPES,
-  getWeekRange,
   computeDailyBreakdown,
   totalPointsForPerson,
 } from './scoring.js';
+import { mountHistoryChart, chartDetailBuckets } from './history-chart.js';
+
+if (location.hash === '#week' || location.hash === '#progress') {
+  location.replace(location.hash === '#week' ? 'index.html' : 'index.html#milestones');
+}
 
 const state = {
   activities: [],
-  view: 'daily',
   person: 'Both',
+  chartRange: '1month',
+  chartAxis: 'days',
 };
 
 const loadingEl = document.getElementById('loading');
 const appEl = document.getElementById('app');
 const errorEl = document.getElementById('error-banner');
 const contentEl = document.getElementById('history-content');
+const chartCanvas = document.getElementById('history-chart');
+const syncEl = document.getElementById('sync-status');
+const sessionIds = new Set();
+let historyChart = null;
 
 function showError(message) {
   errorEl.textContent = `⚠️ ${message}`;
@@ -48,37 +57,95 @@ function activeEvents() {
 }
 
 async function load() {
+  const cached = api.loadCachedActivities();
+  if (cached) {
+    state.activities = cached;
+    render();
+    loadingEl.style.display = 'none';
+    appEl.style.display = 'block';
+    syncEl.hidden = false;
+  }
+
   try {
     clearError();
-    state.activities = await api.getActivities();
+    state.activities = api.mergeActivities(state.activities, await api.getActivities(), sessionIds);
+    api.rememberActivities(state.activities);
     render();
     loadingEl.style.display = 'none';
     appEl.style.display = 'block';
   } catch (err) {
-    showError(err.message);
-    loadingEl.style.display = 'none';
+    if (!cached) {
+      showError(err.message);
+      loadingEl.style.display = 'none';
+    } else {
+      showError('Could not refresh. Showing the last saved scores.');
+    }
+  } finally {
+    syncEl.hidden = true;
   }
+}
+
+function chartPeople() {
+  return state.person === 'Both' ? PEOPLE : [state.person];
+}
+
+function renderChart() {
+  historyChart = mountHistoryChart(
+    chartCanvas,
+    state.activities,
+    {
+      rangeKey: state.chartRange,
+      axis: state.chartAxis,
+      people: chartPeople(),
+    },
+    historyChart
+  );
 }
 
 function render() {
-  contentEl.innerHTML = state.view === 'daily' ? renderDaily() : renderWeekly();
+  renderChart();
+  syncChartToolbar();
+  contentEl.innerHTML =
+    state.chartAxis === 'days' ? renderDailyDetails() : renderWeeklyDetails();
   attachHandlers();
 }
 
-function renderDaily() {
+function weekHasActivity(range) {
   const events = activeEvents();
-  const keys = new Set();
-  for (const e of events) {
-    if (!activePeople().includes(e.person)) continue;
-    keys.add(`${e.date}|${e.person}`);
-  }
-  const sorted = [...keys].sort().reverse();
+  return events.some(
+    (e) =>
+      activePeople().includes(e.person) && e.date >= range.start && e.date <= range.end
+  );
+}
 
-  if (sorted.length === 0) {
-    return `<div class="empty-state">No activity logged yet.</div>`;
+function syncChartToolbar() {
+  const toolbar = document.getElementById('chart-toolbar');
+  if (!toolbar) return;
+  toolbar.querySelectorAll('[data-chart-control]').forEach((group) => {
+    const key = group.dataset.chartControl;
+    const value = key === 'range' ? state.chartRange : state.chartAxis;
+    group.querySelectorAll('button[data-value]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.value === value);
+    });
+  });
+}
+
+function renderDailyDetails() {
+  const events = activeEvents();
+  const buckets = chartDetailBuckets(state.chartRange, 'days');
+  const keys = [];
+  for (const bucket of buckets) {
+    for (const person of activePeople()) {
+      const hasDay = events.some((e) => e.person === person && e.date === bucket.key);
+      if (hasDay) keys.push(`${bucket.key}|${person}`);
+    }
   }
 
-  return sorted
+  if (keys.length === 0) {
+    return `<div class="empty-state">No activity in this range.</div>`;
+  }
+
+  return keys
     .map((key) => {
       const [date, person] = key.split('|');
       const b = computeDailyBreakdown(state.activities, person, date);
@@ -142,22 +209,18 @@ function pointsForSingleEvent(event, dayEventsDesc) {
   return 0;
 }
 
-function renderWeekly() {
-  const events = activeEvents().filter((e) => activePeople().includes(e.person));
-  const weekStarts = new Set();
-  for (const e of events) {
-    const range = getWeekRange(new Date(`${e.date}T00:00:00`));
-    weekStarts.add(range.start);
-  }
-  const sortedStarts = [...weekStarts].sort().reverse();
+function renderWeeklyDetails() {
+  const buckets = chartDetailBuckets(state.chartRange, 'weeks').filter((b) =>
+    weekHasActivity(b.range)
+  );
 
-  if (sortedStarts.length === 0) {
-    return `<div class="empty-state">No activity logged yet.</div>`;
+  if (buckets.length === 0) {
+    return `<div class="empty-state">No activity in this range.</div>`;
   }
 
-  return sortedStarts
-    .map((start) => {
-      const range = getWeekRange(new Date(`${start}T00:00:00`));
+  return buckets
+    .map((bucket) => {
+      const range = bucket.range;
       const scores = {};
       for (const person of PEOPLE) {
         scores[person] = totalPointsForPerson(state.activities, person, range);
@@ -214,6 +277,7 @@ function attachHandlers() {
         await api.deleteActivity(id);
         const activity = state.activities.find((a) => a.id === id);
         if (activity) activity.deleted = true;
+        api.rememberActivities(state.activities);
         render();
       } catch (err) {
         showError(err.message);
@@ -227,17 +291,15 @@ document.getElementById('person-filter').addEventListener('change', (e) => {
   render();
 });
 
-document.getElementById('view-daily').addEventListener('click', () => {
-  state.view = 'daily';
-  document.getElementById('view-daily').classList.add('active');
-  document.getElementById('view-weekly').classList.remove('active');
-  render();
-});
-
-document.getElementById('view-weekly').addEventListener('click', () => {
-  state.view = 'weekly';
-  document.getElementById('view-weekly').classList.add('active');
-  document.getElementById('view-daily').classList.remove('active');
+document.getElementById('chart-toolbar')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-value]');
+  if (!btn) return;
+  const group = btn.closest('[data-chart-control]');
+  if (!group) return;
+  const { chartControl } = group.dataset;
+  const { value } = btn.dataset;
+  if (chartControl === 'range') state.chartRange = value;
+  else if (chartControl === 'axis') state.chartAxis = value;
   render();
 });
 
