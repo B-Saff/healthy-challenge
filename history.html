@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>History — Healthy Challenge</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <h1>📜 History</h1>
+  </header>
+
+  <nav class="links">
+    <a href="index.html">← Back to Dashboard</a>
+  </nav>
+
+  <div id="error-banner" class="error-banner" style="display:none;"></div>
+  <div id="loading" class="loading">Loading…</div>
+
+  <main id="app" style="display:none;">
+    <div class="filters">
+      <select id="person-filter">
+        <option value="Both">Both</option>
+        <option value="Ben">Ben</option>
+        <option value="Chelsea">Chelsea</option>
+      </select>
+      <div class="toggle-group">
+        <button type="button" id="view-daily" class="active">Daily</button>
+        <button type="button" id="view-weekly">Weekly</button>
+      </div>
+    </div>
+
+    <section class="card">
+      <div id="history-content"></div>
+    </section>
+  </main>
+</div>
+
+<script type="module" src="js/history.js"></script>
+</body>
+</html>
