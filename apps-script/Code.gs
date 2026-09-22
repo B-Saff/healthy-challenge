@@ -63,6 +63,12 @@ function asTimestampString(value, tz) {
   return String(value).replace(' ', 'T');
 }
 
+function isDeletedCell(value) {
+  if (value === true) return true;
+  if (value === false || value === '') return false;
+  return String(value).toUpperCase() === 'TRUE';
+}
+
 function activitiesCache() {
   return CacheService.getScriptCache();
 }
@@ -90,7 +96,7 @@ function readActivitiesFromSheet() {
       activity: row[2],
       timestamp: asTimestampString(row[3], tz),
       date: asDateString(row[4], tz),
-      deleted: row[5] === true || row[5] === 'TRUE',
+      deleted: isDeletedCell(row[5]),
     });
   }
   return activities;
@@ -138,13 +144,10 @@ function deleteActivity(id) {
     throw new Error('Missing id');
   }
   var sheet = getSheet();
-  var values = sheet.getDataRange().getValues();
-  for (var i = 1; i < values.length; i++) {
-    if (String(values[i][0]) === String(id)) {
-      sheet.getRange(i + 1, 6).setValue(true); // Deleted column
-      invalidateActivitiesCache();
-      return;
-    }
+  var cell = sheet.createTextFinder(String(id)).matchEntireCell(true).findNext();
+  if (!cell) {
+    throw new Error('Activity not found: ' + id);
   }
-  throw new Error('Activity not found: ' + id);
+  sheet.getRange(cell.getRow(), 6).setValue(true); // Deleted column
+  invalidateActivitiesCache();
 }

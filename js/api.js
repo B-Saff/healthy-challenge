@@ -7,12 +7,25 @@ const CACHE_KEY = 'hc-activities-v1';
 // "simple request" so the Apps Script web app can be called directly from
 // GitHub Pages with no preflight handling required.
 async function call(params) {
-  const url = new URL(APPS_SCRIPT_URL);
+  const url = new URL(APPS_SCRIPT_URL.trim());
   for (const [key, value] of Object.entries(params)) {
-    url.searchParams.set(key, value);
+    if (value == null || value === '') continue;
+    url.searchParams.set(key, String(value));
   }
   const res = await fetch(url.toString());
-  const data = await res.json();
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    const snippet = text.trimStart().slice(0, 40);
+    if (snippet.startsWith('<!')) {
+      throw new Error(
+        'The server returned a web page instead of data. Confirm js/config.js uses your latest Apps Script web app URL (Deploy → New deployment → Web app, Execute as: Me, Who has access: Anyone).'
+      );
+    }
+    throw new Error(`Server response was not JSON (${res.status}). ${snippet}`);
+  }
   if (!data.success) {
     throw new Error(data.error || 'Request failed');
   }
